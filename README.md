@@ -58,6 +58,8 @@ callable from the browser.
 is embedded.
 
 ```bash
+git clone https://github.com/Slayniaccc/tickmap-service.git
+cd tickmap-service
 ./mvnw spring-boot:run          # Windows: mvnw.cmd spring-boot:run
 ```
 
