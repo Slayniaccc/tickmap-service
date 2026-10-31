@@ -42,18 +42,9 @@ class SightingControllerTest {
     @Autowired SightingRepository sightings;
     @Autowired SightingNormalizer normalizer;
 
-    // Seed the real snapshot once; each test only removes what it added.
     @BeforeEach
     void seed() {
-        sightings.deleteAll(sightings.findAll().stream().filter(s -> s.getSource() == Sighting.Source.USER).toList());
-        if (sightings.count() == 0) {
-            sightings.saveAll(RAW.stream().map(n -> {
-                var a = (NormalizationResult.Accepted) normalizer.normalize(n);
-                Sighting s = new Sighting(a.sighting().sourceId(), Sighting.Source.UPSTREAM);
-                s.applyContent(a.sighting());
-                return s;
-            }).toList());
-        }
+        TestFixtures.seedSnapshot(normalizer, sightings);
     }
 
     // Independent oracle: counts straight from the raw JSON.
