@@ -104,6 +104,4 @@ public class Sighting {
     public String getSpecies() { return species; }
     public String getLatinName() { return latinName; }
     public Source getSource() { return source; }
-    public Instant getCreatedAt() { return createdAt; }
-    public Instant getUpdatedAt() { return updatedAt; }
 }
