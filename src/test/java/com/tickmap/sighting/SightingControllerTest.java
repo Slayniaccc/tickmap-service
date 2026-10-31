@@ -1,5 +1,6 @@
 package com.tickmap.sighting;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.endsWith;
 import static org.hamcrest.Matchers.hasItem;
@@ -10,6 +11,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.function.Predicate;
@@ -93,8 +95,10 @@ class SightingControllerTest {
 
         @Test
         void filtersByRegion() throws Exception {
-            search("region", "scotland").andExpect(jsonPath("$.totalElements")
-                    .value(rawCount(n -> Set.of("Glasgow", "Edinburgh").contains(f(n, "location")))));
+            long expected = rawCount(n -> Set.of("Glasgow", "Edinburgh").contains(f(n, "location")));
+            search("region", "scotland").andExpect(jsonPath("$.totalElements").value(expected));
+            search("region", " NORTH   west ").andExpect(jsonPath("$.totalElements")
+                    .value(rawCount(n -> Set.of("Manchester", "Liverpool").contains(f(n, "location")))));
         }
 
         @Test
@@ -142,6 +146,20 @@ class SightingControllerTest {
             search("page", "6", "size", "150")
                     .andExpect(jsonPath("$.content.length()").value(100))
                     .andExpect(jsonPath("$.hasNext").value(false));
+        }
+
+        // 1000 rows sorted by city share only 14 values; paging must still return each row exactly once.
+        @Test
+        void pagingThroughTiedSortValuesNeverRepeatsOrSkipsRows() throws Exception {
+            Set<Long> seen = new HashSet<>();
+            for (int page = 0; page < 10; page++) {
+                String body = search("sort", "city", "size", "100", "page", String.valueOf(page))
+                        .andReturn().getResponse().getContentAsString();
+                for (JsonNode row : TestFixtures.JSON.readTree(body).get("content")) {
+                    assertThat(seen.add(row.get("id").asLong())).as("row %s seen twice", row.get("id")).isTrue();
+                }
+            }
+            assertThat(seen).hasSize(1000);
         }
 
         @Test
@@ -215,6 +233,16 @@ class SightingControllerTest {
                     .andExpect(status().isCreated())
                     .andExpect(jsonPath("$.region").value("Unknown"))
                     .andExpect(jsonPath("$.species").value("Fox/badger tick"));
+        }
+
+        @Test
+        void unknownCityAndSpeciesAreFindableInAnyCase() throws Exception {
+            submit("{'date':'2025-06-14T17:30:00','location':'york','species':'DEER   tick'}")
+                    .andExpect(status().isCreated())
+                    .andExpect(jsonPath("$.city").value("York"))
+                    .andExpect(jsonPath("$.species").value("Deer tick"));
+            search("city", "YORK", "species", "deer TICK").andExpect(jsonPath("$.totalElements").value(1));
+            search("region", "unknown").andExpect(jsonPath("$.totalElements").value(1));
         }
 
         @Test

@@ -50,6 +50,18 @@ public class CityDirectory {
         return Optional.ofNullable(byKey.get(key(rawName)));
     }
 
+    // Case-insensitive; returns the stored spelling, including "Unknown".
+    public Optional<String> findRegion(String rawName) {
+        if (rawName == null) {
+            return Optional.empty();
+        }
+        String k = key(rawName);
+        if (k.equals(key(UNKNOWN_REGION))) {
+            return Optional.of(UNKNOWN_REGION);
+        }
+        return byKey.values().stream().map(City::region).filter(r -> key(r).equals(k)).findFirst();
+    }
+
     public Collection<City> all() {
         // Aliases map to the same City, so de-duplicate.
         return byKey.values().stream().distinct().toList();

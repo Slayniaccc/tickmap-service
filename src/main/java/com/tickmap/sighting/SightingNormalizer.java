@@ -122,7 +122,7 @@ public class SightingNormalizer {
                     "species is missing and latinName '" + latin + "' is not a known species");
         }
         // Unknown species: keep it rather than lose the sighting.
-        return new SpeciesCatalog.Species(capitaliseFirst(collapse(common)), latin == null ? null : collapse(latin));
+        return new SpeciesCatalog.Species(sentenceCase(common), latin == null ? null : collapse(latin));
     }
 
     private LocalDateTime parseDate(String raw) {
@@ -191,8 +191,10 @@ public class SightingNormalizer {
         return s.trim().replaceAll("\\s+", " ");
     }
 
-    private static String capitaliseFirst(String s) {
-        return s.isEmpty() ? s : Character.toUpperCase(s.charAt(0)) + s.substring(1);
+    // Unknown names are stored in one consistent case so search can match them exactly (and use indexes).
+    static String sentenceCase(String s) {
+        String c = collapse(s).toLowerCase(Locale.ROOT);
+        return c.isEmpty() ? c : Character.toUpperCase(c.charAt(0)) + c.substring(1);
     }
 
     static String titleCase(String s) {

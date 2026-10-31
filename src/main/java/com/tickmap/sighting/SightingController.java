@@ -4,6 +4,7 @@ import java.net.URI;
 import java.time.LocalDateTime;
 import java.util.Set;
 
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springdoc.core.annotations.ParameterObject;
@@ -86,7 +87,10 @@ public class SightingController {
             }
         }
         SightingFilter filter = SightingFilter.parse(from, to, city, region, species, cities, this.species);
-        return PageResponse.of(service.search(filter, pageable), SightingResponse::of);
+        // Many rows can share a sort value; without a unique tiebreaker, rows can repeat or vanish between pages.
+        Sort stable = pageable.getSort().and(Sort.by(Sort.Direction.ASC, "id"));
+        Pageable page = PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(), stable);
+        return PageResponse.of(service.search(filter, page), SightingResponse::of);
     }
 
     @Operation(summary = "One sighting")
