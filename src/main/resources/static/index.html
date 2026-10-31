@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tickmap: UK tick sightings</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.6/dist/chart.umd.min.js"></script>
+<style>
+  .viz-root {
+    color-scheme: light;
+    --surface-0: #f4f4f2;
+    --surface-1: #fcfcfb;
+    --border: #e2e1dc;
+    --grid: #ecebe7;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted: #7a7974;
+    --series-1: #2a78d6;
+    --status-good: #0ca30c;
+    --status-warning: #fab219;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) .viz-root {
+      color-scheme: dark;
+      --surface-0: #121211;
+      --surface-1: #1a1a19;
+      --border: #2e2e2c;
+      --grid: #262624;
+      --text-primary: #f0efec;
+      --text-secondary: #c3c2b7;
+      --text-muted: #8f8e86;
+      --series-1: #3987e5;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  .viz-root { min-height: 100vh; background: var(--surface-0); color: var(--text-primary); padding: 20px; }
+  header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 20px; margin-bottom: 16px; }
+  h1 { font-size: 20px; margin: 0; }
+  h2 { font-size: 15px; margin: 0 0 2px; }
+  .sub { color: var(--text-secondary); margin: 0 0 12px; font-size: 13px; }
+  .status { color: var(--text-secondary); font-size: 13px; display: flex; align-items: center; gap: 6px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+  .filters { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; margin-bottom: 16px; }
+  .filters label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--text-secondary); }
+  select, input, button {
+    font: inherit; color: var(--text-primary); background: var(--surface-1);
+    border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px;
+  }
+  button { cursor: pointer; }
+  .chip { display: none; align-items: center; gap: 6px; font-size: 13px; padding: 5px 10px; }
+  .chip.on { display: inline-flex; }
+  .grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); gap: 16px; align-items: start; }
+  @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+  .card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
+  #map { height: 440px; border-radius: 6px; }
+  .chart-box { position: relative; height: 440px; }
+  table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 13px; }
+  th, td { text-align: left; padding: 6px 4px; border-bottom: 1px solid var(--grid); }
+  th { color: var(--text-secondary); font-weight: 600; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  tr.city-row { cursor: pointer; }
+  tr.city-row:hover td { background: var(--grid); }
+  .error { color: #d03b3b; }
+  .leaflet-tooltip { font: 13px system-ui, sans-serif; }
+</style>
+</head>
+<body>
+<div class="viz-root">
+  <header>
+    <h1>UK tick sightings</h1>
+    <span class="status" id="status">Loading sync status…</span>
+  </header>
+
+  <div class="filters">
+    <label>Species
+      <select id="species"><option value="">All species</option></select>
+    </label>
+    <label>From <input type="date" id="from"></label>
+    <label>To <input type="date" id="to"></label>
+    <label>Trend interval
+      <select id="interval"><option value="month">Monthly</option><option value="week">Weekly</option></select>
+    </label>
+    <button class="chip" id="cityChip" title="Clear city filter"><span id="cityChipText"></span> ✕</button>
+  </div>
+
+  <div class="grid">
+    <section class="card">
+      <h2>Sightings by city</h2>
+      <p class="sub">Circle area shows the number of sightings. Click a city to filter the trend.</p>
+      <div id="map" role="img" aria-label="Map of UK cities sized by sighting count"></div>
+      <table aria-label="Sightings by city">
+        <thead><tr><th>City</th><th>Region</th><th class="num">Sightings</th></tr></thead>
+        <tbody id="cityTable"></tbody>
+      </table>
+    </section>
+    <section class="card">
+      <h2 id="trendTitle">Sightings per month</h2>
+      <p class="sub" id="trendSub">All cities</p>
+      <div class="chart-box"><canvas id="trend" aria-label="Sightings over time"></canvas></div>
+    </section>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const css = name => getComputedStyle(document.querySelector('.viz-root')).getPropertyValue(name).trim();
+const fmt = new Intl.NumberFormat('en-GB');
+const state = { city: null };
+
+async function getJson(url) {
+  const res = await fetch(url);
+  const body = await res.json();
+  if (!res.ok) throw new Error(body.detail || res.statusText);
+  return body;
+}
+
+function query(extra = {}) {
+  const p = new URLSearchParams();
+  if ($('species').value) p.set('species', $('species').value);
+  if ($('from').value) p.set('from', $('from').value);
+  if ($('to').value) p.set('to', $('to').value);
+  for (const [k, v] of Object.entries(extra)) if (v) p.set(k, v);
+  return p.toString();
+}
+
+// --- sync status ---------------------------------------------------------
+async function loadStatus() {
+  try {
+    const s = await getJson('/api/ingestion/status');
+    const when = s.lastSuccessfulSync ? new Date(s.lastSuccessfulSync).toLocaleString('en-GB') : 'never';
+    const ok = !s.stale;
+    $('status').innerHTML =
+      `<span class="dot" style="background:var(${ok ? '--status-good' : '--status-warning'})"></span>` +
+      `${ok ? 'Up to date' : 'Data may be stale'} · last sync ${when} · ${fmt.format(s.totalSightings)} sightings`;
+  } catch (e) {
+    $('status').innerHTML = `<span class="error">Status unavailable: ${e.message}</span>`;
+  }
+}
+
+// --- map -----------------------------------------------------------------
+const map = L.map('map', { scrollWheelZoom: false, zoomSnap: 0.25 }).setView([54.3, -2.6], 5.5);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  maxZoom: 12, attribution: '&copy; OpenStreetMap contributors'
+}).addTo(map);
+const markers = L.layerGroup().addTo(map);
+let fitted = false;
+
+async function loadCities() {
+  const cities = await getJson('/api/stats/cities?' + query());
+  const max = Math.max(1, ...cities.map(c => c.count));
+  markers.clearLayers();
+  for (const c of cities.filter(c => c.latitude != null)) {
+    const selected = state.city === c.city;
+    L.circleMarker([c.latitude, c.longitude], {
+      radius: 4 + 12 * Math.sqrt(c.count / max),   // area, not radius, tracks the count
+      color: css('--surface-1'), weight: 2,          // 2px surface ring separates overlaps
+      fillColor: css('--series-1'), fillOpacity: selected || !state.city ? 0.85 : 0.35
+    })
+      .bindTooltip(`<b>${c.city}</b> · ${c.region}<br>${fmt.format(c.count)} sightings`, { direction: 'top' })
+      .on('click', () => selectCity(c.city))
+      .addTo(markers);
+  }
+  const located = cities.filter(c => c.latitude != null);
+  if (!fitted && located.length) {
+    map.fitBounds(located.map(c => [c.latitude, c.longitude]), { padding: [30, 30] });
+    fitted = true;
+  }
+  $('cityTable').innerHTML = cities.map(c =>
+    `<tr class="city-row" data-city="${c.city}"><td>${c.city}</td><td>${c.region}</td>` +
+    `<td class="num">${fmt.format(c.count)}</td></tr>`).join('') ||
+    '<tr><td colspan="3">No sightings match these filters</td></tr>';
+  document.querySelectorAll('.city-row').forEach(r => r.onclick = () => selectCity(r.dataset.city));
+}
+
+// --- trend chart ---------------------------------------------------------
+let chart;
+function periodLabel(iso, interval) {
+  const d = new Date(iso + 'T00:00:00');
+  return interval === 'month'
+    ? d.toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })
+    : 'w/c ' + d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+async function loadTrend() {
+  const interval = $('interval').value;
+  const trend = await getJson('/api/stats/trends?' + query({ interval, city: state.city }));
+  $('trendTitle').textContent = interval === 'month' ? 'Sightings per month' : 'Sightings per week';
+  $('trendSub').textContent = state.city ? state.city : 'All cities';
+  const labels = trend.buckets.map(b => periodLabel(b.periodStart, interval));
+  const data = trend.buckets.map(b => b.count);
+
+  if (chart) chart.destroy();
+  chart = new Chart($('trend'), {
+    type: 'line',
+    data: { labels, datasets: [{ data, borderColor: css('--series-1'), borderWidth: 2, tension: 0.25,
+      pointRadius: 0, pointHoverRadius: 5, pointHoverBorderWidth: 2,
+      pointHoverBackgroundColor: css('--series-1'), pointHoverBorderColor: css('--surface-1') }] },
+    options: {
+      maintainAspectRatio: false,
+      animation: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { display: false },
+        tooltip: { displayColors: false, callbacks: { label: ctx => fmt.format(ctx.parsed.y) + ' sightings' } }
+      },
+      scales: {
+        x: { grid: { display: false }, border: { color: css('--border') },
+             ticks: { color: css('--text-muted'), maxRotation: 0, autoSkipPadding: 24 } },
+        y: { beginAtZero: true, grid: { color: css('--grid') }, border: { display: false },
+             ticks: { color: css('--text-muted'), precision: 0 } }
+      }
+    },
+    plugins: [{
+      id: 'crosshair',
+      afterDraw(c) {
+        const active = c.tooltip?.getActiveElements?.() ?? [];
+        if (!active.length) return;
+        const x = active[0].element.x, { top, bottom } = c.chartArea, g = c.ctx;
+        g.save(); g.strokeStyle = css('--text-muted'); g.lineWidth = 1;
+        g.beginPath(); g.moveTo(x, top); g.lineTo(x, bottom); g.stroke(); g.restore();
+      }
+    }]
+  });
+}
+
+// --- wiring --------------------------------------------------------------
+function selectCity(city) {
+  state.city = state.city === city ? null : city;
+  $('cityChip').classList.toggle('on', !!state.city);
+  $('cityChipText').textContent = state.city ? 'City: ' + state.city : '';
+  refresh();
+}
+
+async function refresh() {
+  try {
+    await Promise.all([loadCities(), loadTrend()]);
+  } catch (e) {
+    $('trendSub').innerHTML = `<span class="error">${e.message}</span>`;
+  }
+}
+
+async function init() {
+  const species = await getJson('/api/stats/species');
+  $('species').innerHTML += species.map(s => `<option>${s.species}</option>`).join('');
+  ['species', 'from', 'to', 'interval'].forEach(id => $(id).addEventListener('change', refresh));
+  $('cityChip').onclick = () => selectCity(state.city);
+  loadStatus();
+  refresh();
+}
+init();
+</script>
+</body>
+</html>

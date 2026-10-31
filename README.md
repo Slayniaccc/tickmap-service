@@ -40,6 +40,7 @@ On startup the app syncs from the Elanco API (after 2 seconds), then again every
 
 | URL | What |
 |---|---|
+| http://localhost:8080/ | Map and trend chart page |
 | http://localhost:8080/swagger-ui.html | Swagger UI: try every endpoint |
 | http://localhost:8080/api/ingestion/status | Sync status |
 | http://localhost:8080/h2-console | Database console (JDBC URL `jdbc:h2:file:./data/tickmap`, user `sa`, no password) |
@@ -142,6 +143,19 @@ Example status:
                "unchanged": 0, "duplicates": 0, "rejected": 0, "error": null }
 }
 ```
+
+### Map and trend page
+
+`src/main/resources/static/index.html` is a small single-file page that uses the API. It has no
+build step: it's plain JavaScript with Leaflet and Chart.js from a CDN.
+
+- **Map:** one circle per city, with area proportional to its sighting count. Hover for city,
+  region and count. Click a city to filter the trend.
+- **Trend:** monthly or weekly sightings as a line chart with a hover crosshair.
+- **Filters:** species and date range apply to both views. A status line shows the last sync and
+  whether data is stale.
+- A table under the map lists the same numbers, so nothing relies on reading the chart alone.
+  Light and dark mode follow the OS setting.
 
 ---
 
