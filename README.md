@@ -2,7 +2,9 @@
 
 Backend for a UK tick sightings tracker, built for the Elanco Placement Programme backend task.
 
-**Author:** _your name here_
+**Author:** Abdirahman Abdikadir
+
+**Video walkthrough:** _link to be added_
 
 It pulls tick sighting data from the Elanco API into its own database, cleans and deduplicates it,
 and serves search, aggregate stats and ingestion monitoring over a REST API, with Swagger UI for
@@ -15,15 +17,37 @@ exploring it.
 
 ## Contents
 
-1. [Running it](#running-it)
-2. [API overview](#api-overview)
-3. [Data source: what the upstream API looks like](#data-source-what-the-upstream-api-looks-like)
-4. [Architecture](#architecture)
-5. [How the data is handled](#how-the-data-is-handled)
-6. [Error handling](#error-handling)
-7. [Design decisions and trade-offs](#design-decisions-and-trade-offs)
-8. [Testing](#testing)
-9. [What I'd do with more time](#what-id-do-with-more-time)
+1. [Screenshots](#screenshots)
+2. [Running it](#running-it)
+3. [API overview](#api-overview)
+4. [Data source: what the upstream API looks like](#data-source-what-the-upstream-api-looks-like)
+5. [Architecture](#architecture)
+6. [How the data is handled](#how-the-data-is-handled)
+7. [Error handling](#error-handling)
+8. [Design decisions and trade-offs](#design-decisions-and-trade-offs)
+9. [Testing](#testing)
+10. [What I'd do with more time](#what-id-do-with-more-time)
+
+---
+
+## Screenshots
+
+**Map and trend page** (`http://localhost:8080/`): sightings per city on a map, a monthly or
+weekly trend, filters, and a table with the same numbers.
+
+![Map and trend page](docs/screenshots/map-page.png)
+
+<details>
+<summary>Dark mode (follows the OS setting)</summary>
+
+![Map and trend page in dark mode](docs/screenshots/map-page-dark.png)
+
+</details>
+
+**Swagger UI** (`http://localhost:8080/swagger-ui.html`): every endpoint, grouped by area, and
+callable from the browser.
+
+![Swagger UI](docs/screenshots/swagger-ui.png)
 
 ---
 
@@ -195,21 +219,58 @@ Things that shaped the design:
 
 ## Architecture
 
+### Data flow
+
+```mermaid
+flowchart LR
+    API[(Elanco API<br>/data)]
+    subgraph sync [Sync: on startup, every 6h, or POST /api/ingestion/runs]
+        C[UpstreamClient<br>timeouts, retries<br>with backoff]
+        N[SightingNormalizer<br>validate, clean,<br>add region + coords,<br>fingerprint]
+        D[BatchDeduplicator<br>drop repeats<br>within the batch]
+        S[IngestionService<br>match by id / fingerprint,<br>chunked transactions]
+    end
+    DB[(H2 file DB<br>sightings<br>ingestion_runs<br>rejected_records)]
+    REST[REST API<br>/api/sightings<br>/api/stats<br>/api/ingestion]
+    UI[Swagger UI<br>map page]
+
+    API --> C --> N --> D --> S --> DB
+    N -. rejected .-> DB
+    D -. duplicates .-> DB
+    DB --> REST --> UI
+    REST -- POST /api/sightings<br>same normaliser --> N
 ```
-                         every 6h + on startup, or POST /api/ingestion/runs
-                                          │
- Elanco API ──► TickApiClient ──► SightingNormalizer ──► BatchDeduplicator ──► IngestionService ──► H2
- (/data)        timeouts,         validate, clean,       drop repeats          match DB rows by       (file)
-                retries with      add region + coords,   within the batch      id / fingerprint,       │
-                backoff           fingerprint            │                     chunked transactions    │
-                                     │                   │                          │                  │
-                                     └── rejects ────────┴──────────────────────────┴─► rejected_records
-                                                                                                       │
- REST API ◄─────────────────────────────────────────────────────────────────────────────────────────┘
-   /api/sightings   search (JPA Specification) + POST (same normaliser)
-   /api/stats       GROUP BY queries
-   /api/ingestion   status, run history, rejected records
+
+### What happens when the API fails
+
+```mermaid
+sequenceDiagram
+    participant Svc as IngestionService
+    participant Cli as UpstreamClient
+    participant API as Elanco API
+    participant DB as H2
+
+    Svc->>DB: record run (RUNNING)
+    Svc->>Cli: fetchAllSightings()
+    Cli->>API: GET /tick-sightings
+    API-->>Cli: 429 / 500 / timeout
+    Note over Cli: wait 1s, 2s, 4s... (jitter, Retry-After)
+    Cli->>API: retry (up to 4 attempts)
+    alt API recovers
+        API-->>Cli: 200 + records
+        Cli-->>Svc: records
+        Svc->>DB: upsert in chunks, run = SUCCESS
+    else still failing
+        Cli-->>Svc: UpstreamException
+        Svc->>DB: run = FAILED, existing data untouched
+        Note over Svc,DB: API keeps serving the last good data,<br>status shows lastSuccessfulSync + stale flag
+    end
 ```
+
+### Packages
+
+Package-by-feature: each folder holds everything for one area (entity, repository, service,
+controller), so a change to "stats" stays in `stats/`.
 
 | Package | Responsibility |
 |---|---|
@@ -219,6 +280,7 @@ Things that shaped the design:
 | `stats` | Aggregation queries and stats API |
 | `reference` | Known cities (region, lat/lng) and species (common ↔ Latin name) |
 | `web` | Global error handler, page response shape |
+| (root) | `TickmapApplication` entry point, `ClockConfig` (UK clock, injectable for tests) |
 
 **Tables:** `sightings`, `ingestion_runs`, `rejected_records`.
 
@@ -381,8 +443,8 @@ replies can't hang the sync.
 | `FixtureValidationTest` | 3 | A 25-record **messy fixture** where every record's outcome is asserted, plus the **real 1000-record snapshot**, which must load with zero rejections |
 | `BatchDeduplicatorTest` | 7 | Repeated ids, conflicting content, content duplicates, 100k records in under 2s |
 | `RetryExecutorTest` | 11 | Backoff sequence, cap, jitter bounds, `Retry-After`, give-up, no retry on 4xx or on bugs, interruption |
-| `TickApiClientTest` | 14 | Mock server: 429 → 500 → 502 → success, outage, 404, truncated JSON, empty body, wrong shape, socket timeout, `/stats` |
-| `TickApiClientTimeoutTest` | 2 | **Real HTTP server**: read timeout actually fires, refused connection retried |
+| `UpstreamClientTest` | 14 | Mock server: 429 → 500 → 502 → success, outage, 404, truncated JSON, empty body, wrong shape, socket timeout, `/stats` |
+| `UpstreamClientTimeoutTest` | 2 | **Real HTTP server**: read timeout actually fires, refused connection retried |
 | `IngestionServiceTest` | 12 | Messy feed, idempotent re-runs, updates, update collisions, user/upstream duplicates, outage keeps data, empty feed, concurrent syncs, crash recovery, staleness |
 | `IngestionControllerTest` | 6 | Status, trigger, failed run, paged rejected records, 404, 409 while running |
 | `SightingControllerTest` | 31 | Every filter, combined filters, aliases, inclusive dates, paging, page cap, sorting, bad input; POST success, duplicates, rule violations |
