@@ -108,6 +108,8 @@
 const $ = id => document.getElementById(id);
 const css = name => getComputedStyle(document.querySelector('.viz-root')).getPropertyValue(name).trim();
 const fmt = new Intl.NumberFormat('en-GB');
+// Names can come from user-submitted sightings, so escape anything inserted as HTML.
+const esc = v => String(v ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]);
 const state = { city: null };
 
 async function getJson(url) {
@@ -136,7 +138,7 @@ async function loadStatus() {
       `<span class="dot" style="background:var(${ok ? '--status-good' : '--status-warning'})"></span>` +
       `${ok ? 'Up to date' : 'Data may be stale'} · last sync ${when} · ${fmt.format(s.totalSightings)} sightings`;
   } catch (e) {
-    $('status').innerHTML = `<span class="error">Status unavailable: ${e.message}</span>`;
+    $('status').innerHTML = `<span class="error">Status unavailable: ${esc(e.message)}</span>`;
   }
 }
 
@@ -159,7 +161,7 @@ async function loadCities() {
       color: css('--surface-1'), weight: 2,          // 2px surface ring separates overlaps
       fillColor: css('--series-1'), fillOpacity: selected || !state.city ? 0.85 : 0.35
     })
-      .bindTooltip(`<b>${c.city}</b> · ${c.region}<br>${fmt.format(c.count)} sightings`, { direction: 'top' })
+      .bindTooltip(`<b>${esc(c.city)}</b> · ${esc(c.region)}<br>${fmt.format(c.count)} sightings`, { direction: 'top' })
       .on('click', () => selectCity(c.city))
       .addTo(markers);
   }
@@ -169,7 +171,7 @@ async function loadCities() {
     fitted = true;
   }
   $('cityTable').innerHTML = cities.map(c =>
-    `<tr class="city-row" data-city="${c.city}"><td>${c.city}</td><td>${c.region}</td>` +
+    `<tr class="city-row" data-city="${esc(c.city)}"><td>${esc(c.city)}</td><td>${esc(c.region)}</td>` +
     `<td class="num">${fmt.format(c.count)}</td></tr>`).join('') ||
     '<tr><td colspan="3">No sightings match these filters</td></tr>';
   document.querySelectorAll('.city-row').forEach(r => r.onclick = () => selectCity(r.dataset.city));
@@ -238,13 +240,13 @@ async function refresh() {
   try {
     await Promise.all([loadCities(), loadTrend()]);
   } catch (e) {
-    $('trendSub').innerHTML = `<span class="error">${e.message}</span>`;
+    $('trendSub').innerHTML = `<span class="error">${esc(e.message)}</span>`;
   }
 }
 
 async function init() {
   const species = await getJson('/api/stats/species');
-  $('species').innerHTML += species.map(s => `<option>${s.species}</option>`).join('');
+  $('species').innerHTML += species.map(s => `<option>${esc(s.species)}</option>`).join('');
   ['species', 'from', 'to', 'interval'].forEach(id => $(id).addEventListener('change', refresh));
   $('cityChip').onclick = () => selectCity(state.city);
   loadStatus();
