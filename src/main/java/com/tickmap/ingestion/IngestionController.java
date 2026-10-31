@@ -6,6 +6,7 @@ import java.util.List;
 
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
+import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -64,7 +65,7 @@ public class IngestionController {
     @Operation(summary = "Records rejected or flagged as duplicates in a run")
     @GetMapping("/runs/{id}/rejected")
     public PageResponse<RejectedView> rejected(@PathVariable Long id,
-                                               @PageableDefault(size = 50, sort = "id", direction = Sort.Direction.ASC) Pageable pageable) {
+                                               @ParameterObject @PageableDefault(size = 50, sort = "id", direction = Sort.Direction.ASC) Pageable pageable) {
         if (ingestion.findRun(id).isEmpty()) {
             throw notFound(id);
         }

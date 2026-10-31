@@ -6,6 +6,7 @@ import java.util.Set;
 
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
+import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -72,12 +73,12 @@ public class SightingController {
                     + "'to' is inclusive. Sort by sightedAt, city, region or species, e.g. sort=sightedAt,asc.")
     @GetMapping
     public PageResponse<SightingResponse> search(
-            @Parameter(example = "2023-01-01") @RequestParam(required = false) String from,
-            @Parameter(example = "2023-12-31") @RequestParam(required = false) String to,
+            @Parameter(example = "2020-01-01") @RequestParam(required = false) String from,
+            @Parameter(example = "2020-12-31") @RequestParam(required = false) String to,
             @Parameter(example = "London") @RequestParam(required = false) String city,
-            @Parameter(example = "Scotland") @RequestParam(required = false) String region,
-            @Parameter(example = "Marsh tick") @RequestParam(required = false) String species,
-            @PageableDefault(size = 20, sort = "sightedAt", direction = Sort.Direction.DESC) Pageable pageable) {
+            @Parameter(description = "e.g. Scotland, North West") @RequestParam(required = false) String region,
+            @Parameter(description = "e.g. Marsh tick") @RequestParam(required = false) String species,
+            @ParameterObject @PageableDefault(size = 20, sort = "sightedAt", direction = Sort.Direction.DESC) Pageable pageable) {
         for (Sort.Order order : pageable.getSort()) {
             if (!SORTABLE.contains(order.getProperty())) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
