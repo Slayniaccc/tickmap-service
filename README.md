@@ -4,7 +4,7 @@ Backend for a UK tick sightings tracker, built for the Elanco Placement Programm
 
 **Author:** Abdirahman Abdikadir
 
-**Video walkthrough:** _link to be added_
+**Video walkthrough:** https://youtu.be/2t408UIvj_Q
 
 It pulls tick sighting data from the Elanco API into its own database, cleans and deduplicates it,
 and serves search, aggregate stats and ingestion monitoring over a REST API, with Swagger UI for
