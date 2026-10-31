@@ -78,6 +78,13 @@ public class IngestionRun {
         this.finishedAt = Instant.now();
     }
 
+    // For a run left RUNNING because the app stopped mid-sync.
+    public void markAbandoned() {
+        this.status = Status.FAILED;
+        this.errorMessage = "Abandoned: the application stopped while this run was in progress";
+        this.finishedAt = Instant.now();
+    }
+
     private void applyCounts(IngestionCounts c) {
         this.fetched = c.fetched();
         this.inserted = c.inserted();
