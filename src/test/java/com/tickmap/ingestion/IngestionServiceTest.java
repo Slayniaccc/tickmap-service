@@ -2,6 +2,9 @@ package com.tickmap.ingestion;
 
 import static com.tickmap.TestFixtures.node;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.mockingDetails;
 import static org.mockito.Mockito.when;
 
 import java.time.Instant;
@@ -10,6 +13,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -18,6 +22,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import com.tickmap.TestFixtures;
@@ -40,7 +45,7 @@ class IngestionServiceTest {
     UpstreamClient api;
 
     @Autowired IngestionService ingestion;
-    @Autowired SightingRepository sightings;
+    @MockitoSpyBean SightingRepository sightings;
     @Autowired IngestionRunRepository runs;
     @Autowired RejectedRecordRepository rejections;
     @Autowired SightingNormalizer normalizer;
@@ -234,5 +239,46 @@ class IngestionServiceTest {
 
         assertThat(ingestion.status().lastSuccessfulSync()).isNotNull();
         assertThat(ingestion.status().stale()).isFalse();
+    }
+
+    @Test
+    void onlyTheLast20RunsKeepTheirRejectedRecords() {
+        RunSummary first = sync(TestFixtures.records(TestFixtures.MESSY));
+        RunSummary last = first;
+        for (int i = 0; i < 20; i++) {
+            last = sync(TestFixtures.records(TestFixtures.MESSY));
+        }
+        assertThat(rejections.countByRunId(first.id())).isZero();
+        assertThat(rejections.countByRunId(last.id())).isPositive();
+        assertThat(rejections.findAll().stream().map(RejectedRecord::getRunId).distinct()).hasSize(20);
+    }
+
+    // A user POST commits the same sighting between the chunk's lookup and its insert.
+    @Test
+    void concurrentUserInsertOfTheSameSightingBecomesADuplicateNotAFailedSync() {
+        AtomicBoolean raced = new AtomicBoolean();
+        doAnswer(inv -> {
+            // Repositories are interface proxies, so delegate through the spy's default answer.
+            Object result = mockingDetails(sightings).getMockCreationSettings().getDefaultAnswer().answer(inv);
+            if (raced.compareAndSet(false, true)) {
+                Thread other = new Thread(() -> {
+                    var n = (NormalizationResult.Accepted) normalizer.normalize(
+                            null, LocalDateTime.parse("2022-01-01T10:00:00"), "Leeds", "Marsh tick", null);
+                    Sighting user = new Sighting(null, Sighting.Source.USER);
+                    user.applyContent(n.sighting());
+                    sightings.save(user);
+                });
+                other.start();
+                other.join();
+            }
+            return result;
+        }).when(sightings).findByFingerprintIn(any());
+
+        RunSummary run = sync(List.of(record("a", "2022-01-01T10:00:00", "Leeds", "Marsh tick")));
+
+        assertThat(run.status()).isEqualTo(IngestionRun.Status.SUCCESS);
+        assertThat(run.inserted()).isZero();
+        assertThat(run.duplicates()).isEqualTo(1);
+        assertThat(sightings.count()).isEqualTo(1);
     }
 }

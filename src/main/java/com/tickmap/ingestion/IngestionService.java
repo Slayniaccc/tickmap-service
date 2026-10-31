@@ -19,6 +19,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -112,7 +113,26 @@ public class IngestionService {
             log.error("Ingestion run {} failed; serving existing data", run.getId(), e);
             run.fail(progress.get(), e.getMessage());
         }
-        return runs.save(run);
+        IngestionRun saved = runs.save(run);
+        pruneOldRejections();
+        return saved;
+    }
+
+    // The same bad upstream records are re-rejected every sync, so only the runs listed by /runs keep theirs.
+    private void pruneOldRejections() {
+        List<IngestionRun> recent = runs.findTop20ByOrderByStartedAtDesc();
+        if (recent.size() < 20) {
+            return;
+        }
+        try {
+            Long oldestKept = recent.getLast().getId();
+            Integer deleted = tx.execute(s -> rejections.deleteByRunIdLessThan(oldestKept));
+            if (deleted != null && deleted > 0) {
+                log.info("Pruned {} rejected records from runs before {}", deleted, oldestKept);
+            }
+        } catch (RuntimeException e) {
+            log.warn("Could not prune old rejected records", e);
+        }
     }
 
     private void load(Long runId, List<JsonNode> raw, AtomicReference<IngestionCounts> progress) {
@@ -142,8 +162,17 @@ public class IngestionService {
 
         // One transaction per chunk keeps memory and lock time bounded on large feeds.
         for (List<BatchDeduplicator.Candidate> chunk : partition(deduped.unique())) {
-            IngestionCounts c = tx.execute(s -> loadChunk(runId, chunk));
-            progress.updateAndGet(p -> p.plus(c));
+            IngestionCounts c;
+            try {
+                c = tx.execute(s -> loadChunk(runId, chunk));
+            } catch (DataIntegrityViolationException e) {
+                // A POST /api/sightings committed the same sighting after our lookup. The chunk rolled back;
+                // re-running it sees that row and records a duplicate instead of failing the whole sync.
+                log.warn("Chunk hit a concurrent insert; retrying it once: {}", e.getMostSpecificCause().getMessage());
+                c = tx.execute(s -> loadChunk(runId, chunk));
+            }
+            IngestionCounts counts = c;
+            progress.updateAndGet(p -> p.plus(counts));
         }
     }
 

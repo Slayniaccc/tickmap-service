@@ -5,6 +5,7 @@ import java.util.List;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 
 public interface RejectedRecordRepository extends JpaRepository<RejectedRecord, Long> {
@@ -16,4 +17,8 @@ public interface RejectedRecordRepository extends JpaRepository<RejectedRecord, 
     // Rows of [reason, count].
     @Query("select r.reason, count(r) from RejectedRecord r where r.runId = :runId group by r.reason order by count(r) desc")
     List<Object[]> countByReasonForRun(Long runId);
+
+    @Modifying
+    @Query("delete from RejectedRecord r where r.runId < :runId")
+    int deleteByRunIdLessThan(Long runId);
 }
