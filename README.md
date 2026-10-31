@@ -11,7 +11,7 @@ and serves search, aggregate stats and ingestion monitoring over a REST API, wit
 exploring it.
 
 - Java 21, Spring Boot 4.1, Spring Data JPA (Hibernate 7), H2
-- 31 source files, 18 test files, 196 tests
+- 31 source files, 18 test files, 200 tests
 
 ---
 
@@ -26,7 +26,8 @@ exploring it.
 7. [Error handling](#error-handling)
 8. [Design decisions and trade-offs](#design-decisions-and-trade-offs)
 9. [Testing](#testing)
-10. [What I'd do with more time](#what-id-do-with-more-time)
+10. [Known limits and bottlenecks](#known-limits-and-bottlenecks)
+11. [What I'd do with more time](#what-id-do-with-more-time)
 
 ---
 
@@ -310,11 +311,17 @@ says exactly how old it is.
   with two `IN` queries (by id and by fingerprint) rather than one query per record, then inserts
   in JDBC batches. Memory use and lock time stay bounded however large the feed gets.
 - **Indexes** on `sightedAt`, `(city, sightedAt)`, `(region, sightedAt)` and `species`, matching
-  the search and stats filters.
+  the search and stats filters. Filters are canonicalised the same way the normaliser stores values
+  (`"london"` → `London`, `"north west"` → `North West`), so the query is a plain `city = ?` that can
+  use the index, rather than `lower(city) = ?`, which would force a full scan.
+- **Stable paging.** Every sort gets `id` appended as a tiebreaker. Without it, rows sharing a sort
+  value (1000 sightings across 14 cities) can repeat or go missing between pages.
 - **Aggregation in the database.** Stats queries are `GROUP BY`, so only grouped rows come back,
   never individual sightings. Trends group by day, giving at most one row per day, however many
   sightings there are.
 - **Page size is capped at 200**, so one request can't pull the whole table.
+- **Rejected records are pruned** to the last 20 runs. The same bad upstream record is re-rejected
+  on every sync, so without this the table would grow by the same rows four times a day.
 
 ### Duplicates
 
@@ -413,8 +420,8 @@ replies can't hang the sync.
   so the code can focus on the data handling. Spring is widely used for enterprise backends.
 - **H2 as a file, not in memory.** Data survives a restart, so the service can serve the last good
   data even if the upstream is down when it starts. No setup is needed for a reviewer. For
-  production I'd use PostgreSQL. The queries are standard JPA, and the trends query avoids
-  database-specific date functions.
+  production I'd use PostgreSQL. The queries are standard JPA, and the trends query uses JPA 3.2
+  `extract()`, which Hibernate renders as standard `EXTRACT(YEAR FROM ...)`, so nothing is tied to H2.
 - **Raw JSON nodes, not typed DTOs, from the client.** Deserialising straight into Java objects
   would fail the whole batch over one bad date. Raw nodes let the validator decide record by
   record.
@@ -434,7 +441,7 @@ replies can't hang the sync.
 ## Testing
 
 ```bash
-./mvnw test     # 196 tests, about 15 seconds
+./mvnw test     # 200 tests, about 15 seconds
 ```
 
 | Test class | Tests | Covers |
@@ -445,9 +452,9 @@ replies can't hang the sync.
 | `RetryExecutorTest` | 11 | Backoff sequence, cap, jitter bounds, `Retry-After`, give-up, no retry on 4xx or on bugs, interruption |
 | `UpstreamClientTest` | 14 | Mock server: 429 → 500 → 502 → success, outage, 404, truncated JSON, empty body, wrong shape, socket timeout, `/stats` |
 | `UpstreamClientTimeoutTest` | 2 | **Real HTTP server**: read timeout actually fires, refused connection retried |
-| `IngestionServiceTest` | 12 | Messy feed, idempotent re-runs, updates, update collisions, user/upstream duplicates, outage keeps data, empty feed, concurrent syncs, crash recovery, staleness |
+| `IngestionServiceTest` | 14 | Messy feed, idempotent re-runs, updates, update collisions, user/upstream duplicates, outage keeps data, empty feed, concurrent syncs, crash recovery, staleness, rejected-record pruning, a user POST racing the sync |
 | `IngestionControllerTest` | 6 | Status, trigger, failed run, paged rejected records, 404, 409 while running |
-| `SightingControllerTest` | 31 | Every filter, combined filters, aliases, inclusive dates, paging, page cap, sorting, bad input; POST success, duplicates, rule violations |
+| `SightingControllerTest` | 33 | Every filter, combined filters, aliases, inclusive dates, paging (no repeats across tied sort values), page cap, sorting, bad input; POST success, duplicates, rule violations, unknown names searchable in any case |
 | `StatsControllerTest` | 13 | Region/city/species/summary counts, monthly and weekly trends, ISO week across New Year, zero-filling, bad input |
 | `GlobalExceptionHandlerTest` | 12 | 400/404/405/409/415/500 shapes; 500s leak no internals |
 | `EndToEndIngestionTest` | 2 | **Whole app, no mocks**, against a fake upstream: 429 → 500 → messy data, total outage, wrong shape, recovery with a correction, hanging server |
@@ -461,6 +468,24 @@ Two choices worth pointing out:
   answer.
 - **Time is frozen** in validation tests (an injected `Clock`), and retry tests swap out the sleep,
   so the suite gives the same result every run and doesn't wait for real backoffs.
+
+---
+
+## Known limits and bottlenecks
+
+Things I know about and chose not to solve at this size, and what I'd do if they started to matter.
+
+| Limit | Why it's acceptable now | What I'd change |
+|---|---|---|
+| The whole upstream response is held in memory (one array, no pagination upstream) | 1000 records is about 150 KB | Stream-parse the array with Jackson's streaming API and feed chunks straight into the loader |
+| `POST /api/ingestion/runs` waits for the sync to finish | A sync takes under a second. If every retry times out it can take a minute or two | Return `202 Accepted` with the run id and let clients poll `/runs/{id}` |
+| The sync lock is per process | One instance | A database lock (e.g. ShedLock) so only one instance syncs |
+| If a chunk fails for a reason other than a duplicate race, earlier chunks stay committed | Loading is an idempotent upsert, so the next sync converges. The run is marked FAILED with partial counts | Stage into a temporary table and swap in one transaction |
+| Offset paging (`page=500`) gets slower deep into large tables | Page size is capped and the table is small | Keyset paging (`after=<sightedAt,id>`) |
+| Upstream deletions aren't reflected | Avoids an empty or broken response wiping the data | Soft-delete rows missing from several consecutive syncs |
+| Sighting times are UK local with no zone (as upstream sends them) | Matches the source. The one ambiguous hour each October is rare | Store `Instant` plus the original string |
+| No auth or rate limiting on the write endpoints; H2 console on | Local demo. The H2 console only accepts local connections | Spring Security, a rate limiter, and the console off outside a `dev` profile |
+| The map page builds HTML from API data | Every value is HTML-escaped, so a sighting with `<script>` as its city is shown as text, not run | A Content-Security-Policy header as a second layer |
 
 ---
 
