@@ -2,6 +2,7 @@ package com.tickmap.stats;
 
 import java.time.DayOfWeek;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.time.temporal.TemporalAdjusters;
 import java.util.ArrayList;
@@ -21,6 +22,8 @@ import jakarta.persistence.Tuple;
 import jakarta.persistence.criteria.CriteriaBuilder;
 import jakarta.persistence.criteria.CriteriaQuery;
 import jakarta.persistence.criteria.Expression;
+import jakarta.persistence.criteria.LocalDateTimeField;
+import jakarta.persistence.criteria.Path;
 import jakarta.persistence.criteria.Root;
 import jakarta.persistence.criteria.Selection;
 
@@ -75,10 +78,12 @@ public class StatsRepository {
 
         TreeMap<LocalDate, Long> counts = new TreeMap<>();
         CriteriaBuilder cb = em.getCriteriaBuilder();
-        for (Tuple t : grouped(filter, r -> List.of(
-                cb.function("year", Integer.class, r.get("sightedAt")),
-                cb.function("month", Integer.class, r.get("sightedAt")),
-                cb.function("day", Integer.class, r.get("sightedAt"))))) {
+        // JPA 3.2 extract() renders as standard EXTRACT(... FROM ...), so this runs on H2 and Postgres alike.
+        for (Tuple t : grouped(filter, r -> {
+            Path<LocalDateTime> at = r.get("sightedAt");
+            return List.of(cb.extract(LocalDateTimeField.YEAR, at), cb.extract(LocalDateTimeField.MONTH, at),
+                    cb.extract(LocalDateTimeField.DAY, at));
+        })) {
             LocalDate day = LocalDate.of(t.get(0, Integer.class), t.get(1, Integer.class), t.get(2, Integer.class));
             counts.merge(periodOf.apply(day), t.get(3, Long.class), Long::sum);
         }
