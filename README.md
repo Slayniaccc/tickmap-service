@@ -461,6 +461,7 @@ replies can't hang the sync.
 | `GlobalExceptionHandlerTest` | 12 | 400/404/405/409/415/500 shapes; 500s leak no internals |
 | `EndToEndIngestionTest` | 2 | **Whole app, no mocks**, against a fake upstream: 429 → 500 → messy data, total outage, wrong shape, recovery with a correction, hanging server |
 | Repository and reference tests | 25 | Unique constraints, bulk lookups, city/species lookups |
+| `TickmapApplicationTests` | 1 | The application context starts |
 
 Two choices worth pointing out:
 
