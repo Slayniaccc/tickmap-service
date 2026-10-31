@@ -26,15 +26,15 @@ import tools.jackson.databind.json.JsonMapper;
  * whole batch. Validation happens per record afterwards.
  */
 @Component
-public class TickApiClient {
+public class UpstreamClient {
 
-    private static final Logger log = LoggerFactory.getLogger(TickApiClient.class);
+    private static final Logger log = LoggerFactory.getLogger(UpstreamClient.class);
 
     private final RestClient rest;
     private final RetryExecutor retry;
     private final JsonMapper json;
 
-    public TickApiClient(RestClient tickApiRestClient, RetryExecutor retry, JsonMapper json) {
+    public UpstreamClient(RestClient tickApiRestClient, RetryExecutor retry, JsonMapper json) {
         this.rest = tickApiRestClient;
         this.retry = retry;
         this.json = json;
@@ -45,7 +45,7 @@ public class TickApiClient {
         return retry.execute("GET /tick-sightings", () -> {
             JsonNode root = parse(get("/tick-sightings"));
             if (!root.isArray()) {
-                throw UpstreamApiException.unexpectedShape(
+                throw UpstreamException.unexpectedShape(
                         "Expected a JSON array from /tick-sightings but got " + root.getNodeType());
             }
             List<JsonNode> records = new ArrayList<>(root.size());
@@ -61,7 +61,7 @@ public class TickApiClient {
                 JsonNode total = parse(get("/stats")).get("total_sightings");
                 return Optional.ofNullable(total != null && total.isInt() ? total.intValue() : null);
             });
-        } catch (UpstreamApiException e) {
+        } catch (UpstreamException e) {
             log.warn("Could not read upstream /stats: {}", e.getMessage());
             return Optional.empty();
         }
@@ -74,24 +74,24 @@ public class TickApiClient {
                     .accept(MediaType.APPLICATION_JSON)
                     .retrieve()
                     .onStatus(HttpStatusCode::isError, (request, response) -> {
-                        throw UpstreamApiException.forStatus(
+                        throw UpstreamException.forStatus(
                                 response.getStatusCode().value(), readBody(response), retryAfter(response));
                     })
                     .body(String.class);
         } catch (ResourceAccessException e) {
             // timeouts, DNS failures, refused connections
-            throw UpstreamApiException.network(e);
+            throw UpstreamException.network(e);
         }
     }
 
     private JsonNode parse(String body) {
         if (body == null || body.isBlank()) {
-            throw UpstreamApiException.corruptBody(new IllegalStateException("empty response body"));
+            throw UpstreamException.corruptBody(new IllegalStateException("empty response body"));
         }
         try {
             return json.readTree(body);
         } catch (JacksonException e) {
-            throw UpstreamApiException.corruptBody(e);
+            throw UpstreamException.corruptBody(e);
         }
     }
 

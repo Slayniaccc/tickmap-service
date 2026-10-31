@@ -15,7 +15,7 @@ import java.util.Optional;
 
 import org.springframework.stereotype.Component;
 
-import com.tickmap.config.TimeConfig;
+import com.tickmap.ClockConfig;
 import com.tickmap.ingestion.RejectionReason;
 import com.tickmap.reference.CityDirectory;
 import com.tickmap.reference.SpeciesCatalog;
@@ -135,7 +135,7 @@ public class SightingNormalizer {
         } catch (DateTimeParseException ignored) { }
         try {
             return OffsetDateTime.parse(s)                                  // 2022-08-01T06:40:31Z / +01:00
-                    .atZoneSameInstant(TimeConfig.UK).toLocalDateTime();
+                    .atZoneSameInstant(ClockConfig.UK).toLocalDateTime();
         } catch (DateTimeParseException ignored) { }
         try {
             return LocalDate.parse(s).atStartOfDay();                       // 2022-08-01

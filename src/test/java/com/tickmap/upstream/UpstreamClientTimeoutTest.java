@@ -20,7 +20,7 @@ import com.sun.net.httpserver.HttpServer;
 import tools.jackson.databind.json.JsonMapper;
 
 /** Real local HTTP server, to prove the timeouts actually fire. */
-class TickApiClientTimeoutTest {
+class UpstreamClientTimeoutTest {
 
     private HttpServer server;
 
@@ -31,10 +31,10 @@ class TickApiClientTimeoutTest {
         }
     }
 
-    private TickApiClient clientFor(String baseUrl, Duration readTimeout) {
+    private UpstreamClient clientFor(String baseUrl, Duration readTimeout) {
         var props = new UpstreamProperties(baseUrl, Duration.ofMillis(500), readTimeout,
                 new UpstreamProperties.Retry(3, Duration.ofMillis(10), 2.0, Duration.ofMillis(50)));
-        return new TickApiClient(UpstreamConfig.restClientBuilder(props).build(),
+        return new UpstreamClient(UpstreamConfig.restClientBuilder(props).build(),
                 new RetryExecutor(props.retry()), JsonMapper.builder().build());
     }
 
@@ -78,9 +78,9 @@ class TickApiClientTimeoutTest {
         }
 
         assertThatThrownBy(() -> clientFor("http://127.0.0.1:" + closedPort + "/data", Duration.ofSeconds(1)).fetchAllSightings())
-                .isInstanceOf(UpstreamApiException.class)
+                .isInstanceOf(UpstreamException.class)
                 .hasMessageContaining("failed after 3 attempt(s)")
                 .hasMessageContaining("unreachable")
-                .satisfies(e -> assertThat(((UpstreamApiException) e).getHttpStatus()).isNull());
+                .satisfies(e -> assertThat(((UpstreamException) e).getHttpStatus()).isNull());
     }
 }

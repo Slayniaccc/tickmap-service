@@ -8,7 +8,6 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
-import com.tickmap.config.TimeConfig;
 import com.tickmap.sighting.NormalizationResult;
 import com.tickmap.sighting.Sighting;
 import com.tickmap.sighting.SightingNormalizer;
@@ -23,7 +22,7 @@ public final class TestFixtures {
 
     // 2026-10-31 12:00 UK time
     public static final Clock FIXED_CLOCK = Clock.fixed(
-            LocalDateTime.of(2026, 10, 31, 12, 0).atZone(TimeConfig.UK).toInstant(), TimeConfig.UK);
+            LocalDateTime.of(2026, 10, 31, 12, 0).atZone(ClockConfig.UK).toInstant(), ClockConfig.UK);
 
     public static final String MESSY = "/fixtures/messy-sightings.json";
     public static final String SNAPSHOT = "/fixtures/upstream-snapshot-2026-10-31.json";

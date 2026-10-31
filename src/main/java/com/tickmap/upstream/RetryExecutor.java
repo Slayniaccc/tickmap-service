@@ -40,10 +40,10 @@ public class RetryExecutor {
         while (true) {
             try {
                 return call.get();
-            } catch (UpstreamApiException e) {
+            } catch (UpstreamException e) {
                 if (!e.isRetryable() || attempt >= config.maxAttempts()) {
                     log.error("{} giving up on attempt {}/{}: {}", operation, attempt, config.maxAttempts(), e.getMessage());
-                    throw UpstreamApiException.exhausted(operation, attempt, e);
+                    throw UpstreamException.exhausted(operation, attempt, e);
                 }
                 Duration delay = delayBeforeRetry(attempt, e.getRetryAfter());
                 log.warn("{} attempt {}/{} failed ({}); retrying in {} ms",
@@ -69,7 +69,7 @@ public class RetryExecutor {
             sleeper.sleep(d);
         } catch (InterruptedException ie) {
             Thread.currentThread().interrupt();
-            throw new UpstreamApiException("Interrupted while waiting to retry", null, false, null, ie);
+            throw new UpstreamException("Interrupted while waiting to retry", null, false, null, ie);
         }
     }
 }

@@ -28,7 +28,7 @@ import com.tickmap.sighting.NormalizedSighting;
 import com.tickmap.sighting.Sighting;
 import com.tickmap.sighting.SightingNormalizer;
 import com.tickmap.sighting.SightingRepository;
-import com.tickmap.upstream.TickApiClient;
+import com.tickmap.upstream.UpstreamClient;
 
 import tools.jackson.databind.JsonNode;
 
@@ -51,7 +51,7 @@ public class IngestionService {
     public record Status(Instant lastSuccessfulSync, boolean stale, boolean syncInProgress, long totalSightings,
                          Integer upstreamReportedTotal, RunSummary lastRun) {}
 
-    private final TickApiClient client;
+    private final UpstreamClient client;
     private final SightingNormalizer normalizer;
     private final BatchDeduplicator deduplicator;
     private final SightingRepository sightings;
@@ -64,7 +64,7 @@ public class IngestionService {
     private final Instant startedAt;
     private final ReentrantLock lock = new ReentrantLock();
 
-    public IngestionService(TickApiClient client, SightingNormalizer normalizer, BatchDeduplicator deduplicator,
+    public IngestionService(UpstreamClient client, SightingNormalizer normalizer, BatchDeduplicator deduplicator,
                             SightingRepository sightings, IngestionRunRepository runs,
                             RejectedRecordRepository rejections, PlatformTransactionManager txManager, Clock clock,
                             @Value("${tickmap.ingestion.chunk-size:500}") int chunkSize,

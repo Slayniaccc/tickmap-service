@@ -26,7 +26,7 @@ import jakarta.persistence.criteria.Selection;
 
 // All aggregation is GROUP BY in the database; only grouped rows come back, never individual sightings.
 @Repository
-public class StatsQueries {
+public class StatsRepository {
 
     public enum Interval { WEEK, MONTH }
 
@@ -42,7 +42,7 @@ public class StatsQueries {
 
     private final EntityManager em;
 
-    public StatsQueries(EntityManager em) {
+    public StatsRepository(EntityManager em) {
         this.em = em;
     }
 

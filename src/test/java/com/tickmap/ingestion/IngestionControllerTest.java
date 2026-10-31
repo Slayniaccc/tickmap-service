@@ -26,7 +26,7 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import com.tickmap.TestFixtures;
 import com.tickmap.sighting.SightingRepository;
-import com.tickmap.upstream.TickApiClient;
+import com.tickmap.upstream.UpstreamClient;
 
 import tools.jackson.databind.json.JsonMapper;
 
@@ -36,7 +36,7 @@ import tools.jackson.databind.json.JsonMapper;
 class IngestionControllerTest {
 
     @MockitoBean
-    TickApiClient api;
+    UpstreamClient api;
 
     @Autowired MockMvc mvc;
     @Autowired SightingRepository sightings;

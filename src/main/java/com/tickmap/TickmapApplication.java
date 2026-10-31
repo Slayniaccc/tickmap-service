@@ -10,10 +10,10 @@ import io.swagger.v3.oas.annotations.info.Info;
 		description = "UK tick sightings: ingested from the Elanco API, cleaned and deduplicated, "
 				+ "with search, aggregate stats and ingestion monitoring."))
 @SpringBootApplication
-public class TickmapServiceApplication {
+public class TickmapApplication {
 
 	public static void main(String[] args) {
-		SpringApplication.run(TickmapServiceApplication.class, args);
+		SpringApplication.run(TickmapApplication.class, args);
 	}
 
 }

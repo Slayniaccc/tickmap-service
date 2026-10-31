@@ -26,8 +26,8 @@ import com.tickmap.sighting.NormalizationResult;
 import com.tickmap.sighting.Sighting;
 import com.tickmap.sighting.SightingNormalizer;
 import com.tickmap.sighting.SightingRepository;
-import com.tickmap.upstream.TickApiClient;
-import com.tickmap.upstream.UpstreamApiException;
+import com.tickmap.upstream.UpstreamClient;
+import com.tickmap.upstream.UpstreamException;
 
 import tools.jackson.databind.JsonNode;
 
@@ -37,7 +37,7 @@ import tools.jackson.databind.JsonNode;
 class IngestionServiceTest {
 
     @MockitoBean
-    TickApiClient api;
+    UpstreamClient api;
 
     @Autowired IngestionService ingestion;
     @Autowired SightingRepository sightings;
@@ -62,8 +62,8 @@ class IngestionServiceTest {
         return node("{'id':'" + id + "','date':'" + date + "','location':'" + city + "','species':'" + species + "'}");
     }
 
-    static UpstreamApiException upstreamDown() {
-        return UpstreamApiException.exhausted("GET /tick-sightings", 4, UpstreamApiException.forStatus(503, "", null));
+    static UpstreamException upstreamDown() {
+        return UpstreamException.exhausted("GET /tick-sightings", 4, UpstreamException.forStatus(503, "", null));
     }
 
     @Test

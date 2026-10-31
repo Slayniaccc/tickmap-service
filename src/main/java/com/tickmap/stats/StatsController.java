@@ -28,14 +28,14 @@ public class StatsController {
     public record Summary(long totalSightings, LocalDateTime earliest, LocalDateTime latest,
                           int cities, int regions, int species) {}
 
-    public record Trend(StatsQueries.Interval interval, List<StatsQueries.Bucket> buckets) {}
+    public record Trend(StatsRepository.Interval interval, List<StatsRepository.Bucket> buckets) {}
 
-    private final StatsQueries stats;
+    private final StatsRepository stats;
     private final SightingRepository sightings;
     private final CityDirectory cities;
     private final SpeciesCatalog species;
 
-    public StatsController(StatsQueries stats, SightingRepository sightings, CityDirectory cities, SpeciesCatalog species) {
+    public StatsController(StatsRepository stats, SightingRepository sightings, CityDirectory cities, SpeciesCatalog species) {
         this.stats = stats;
         this.sightings = sightings;
         this.cities = cities;
@@ -53,7 +53,7 @@ public class StatsController {
 
     @Operation(summary = "Sightings per region, most first")
     @GetMapping("/regions")
-    public List<StatsQueries.RegionCount> regions(@RequestParam(required = false) String from,
+    public List<StatsRepository.RegionCount> regions(@RequestParam(required = false) String from,
                                                   @RequestParam(required = false) String to,
                                                   @RequestParam(required = false) String city,
                                                   @RequestParam(required = false) String region,
@@ -63,7 +63,7 @@ public class StatsController {
 
     @Operation(summary = "Sightings per city, with coordinates for mapping")
     @GetMapping("/cities")
-    public List<StatsQueries.CityCount> cities(@RequestParam(required = false) String from,
+    public List<StatsRepository.CityCount> cities(@RequestParam(required = false) String from,
                                                @RequestParam(required = false) String to,
                                                @RequestParam(required = false) String city,
                                                @RequestParam(required = false) String region,
@@ -73,7 +73,7 @@ public class StatsController {
 
     @Operation(summary = "Sightings per species")
     @GetMapping("/species")
-    public List<StatsQueries.SpeciesCount> species(@RequestParam(required = false) String from,
+    public List<StatsRepository.SpeciesCount> species(@RequestParam(required = false) String from,
                                                    @RequestParam(required = false) String to,
                                                    @RequestParam(required = false) String city,
                                                    @RequestParam(required = false) String region,
@@ -90,9 +90,9 @@ public class StatsController {
                         @RequestParam(required = false) String city,
                         @RequestParam(required = false) String region,
                         @RequestParam(required = false) String species) {
-        StatsQueries.Interval i = switch (interval.trim().toLowerCase(Locale.ROOT)) {
-            case "week", "weekly" -> StatsQueries.Interval.WEEK;
-            case "month", "monthly" -> StatsQueries.Interval.MONTH;
+        StatsRepository.Interval i = switch (interval.trim().toLowerCase(Locale.ROOT)) {
+            case "week", "weekly" -> StatsRepository.Interval.WEEK;
+            case "month", "monthly" -> StatsRepository.Interval.MONTH;
             default -> throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "interval must be 'week' or 'month', got '" + interval + "'");
         };

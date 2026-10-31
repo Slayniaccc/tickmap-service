@@ -20,8 +20,8 @@ class RetryExecutorTest {
         return new RetryExecutor(config, sleeps::add, () -> randomValue);
     }
 
-    private static UpstreamApiException retryable() {
-        return UpstreamApiException.forStatus(503, "busy", null);
+    private static UpstreamException retryable() {
+        return UpstreamException.forStatus(503, "busy", null);
     }
 
     @AfterEach
@@ -82,9 +82,9 @@ class RetryExecutorTest {
             calls.incrementAndGet();
             throw retryable();
         }))
-                .isInstanceOf(UpstreamApiException.class)
+                .isInstanceOf(UpstreamException.class)
                 .hasMessageContaining("GET /x failed after 3 attempt(s)")
-                .satisfies(e -> assertThat(((UpstreamApiException) e).getHttpStatus()).isEqualTo(503));
+                .satisfies(e -> assertThat(((UpstreamException) e).getHttpStatus()).isEqualTo(503));
         assertThat(calls).hasValue(3);
         assertThat(sleeps).hasSize(2);
     }
@@ -94,8 +94,8 @@ class RetryExecutorTest {
         AtomicInteger calls = new AtomicInteger();
         assertThatThrownBy(() -> executor(4, 1.0).execute("op", () -> {
             calls.incrementAndGet();
-            throw UpstreamApiException.forStatus(404, "Not found", null);
-        })).isInstanceOf(UpstreamApiException.class);
+            throw UpstreamException.forStatus(404, "Not found", null);
+        })).isInstanceOf(UpstreamException.class);
         assertThat(calls).hasValue(1);
         assertThat(sleeps).isEmpty();
     }
@@ -116,7 +116,7 @@ class RetryExecutorTest {
         assertThatThrownBy(() -> executor(1, 1.0).execute("op", () -> {
             calls.incrementAndGet();
             throw retryable();
-        })).isInstanceOf(UpstreamApiException.class);
+        })).isInstanceOf(UpstreamException.class);
         assertThat(calls).hasValue(1);
     }
 
@@ -125,19 +125,19 @@ class RetryExecutorTest {
         var config = new UpstreamProperties.Retry(4, Duration.ofSeconds(1), 2.0, Duration.ofSeconds(5));
         RetryExecutor ex = new RetryExecutor(config, d -> { throw new InterruptedException(); }, () -> 1.0);
         assertThatThrownBy(() -> ex.execute("op", () -> { throw retryable(); }))
-                .isInstanceOf(UpstreamApiException.class)
+                .isInstanceOf(UpstreamException.class)
                 .hasRootCauseInstanceOf(InterruptedException.class);
         assertThat(Thread.currentThread().isInterrupted()).isTrue();
     }
 
     @Test
     void classifiesHttpStatusesCorrectly() {
-        assertThat(UpstreamApiException.forStatus(429, "", null).isRetryable()).isTrue();
-        assertThat(UpstreamApiException.forStatus(408, "", null).isRetryable()).isTrue();
-        assertThat(UpstreamApiException.forStatus(500, "", null).isRetryable()).isTrue();
-        assertThat(UpstreamApiException.forStatus(504, "", null).isRetryable()).isTrue();
-        assertThat(UpstreamApiException.forStatus(400, "", null).isRetryable()).isFalse();
-        assertThat(UpstreamApiException.forStatus(401, "", null).isRetryable()).isFalse();
-        assertThat(UpstreamApiException.forStatus(404, "", null).isRetryable()).isFalse();
+        assertThat(UpstreamException.forStatus(429, "", null).isRetryable()).isTrue();
+        assertThat(UpstreamException.forStatus(408, "", null).isRetryable()).isTrue();
+        assertThat(UpstreamException.forStatus(500, "", null).isRetryable()).isTrue();
+        assertThat(UpstreamException.forStatus(504, "", null).isRetryable()).isTrue();
+        assertThat(UpstreamException.forStatus(400, "", null).isRetryable()).isFalse();
+        assertThat(UpstreamException.forStatus(401, "", null).isRetryable()).isFalse();
+        assertThat(UpstreamException.forStatus(404, "", null).isRetryable()).isFalse();
     }
 }

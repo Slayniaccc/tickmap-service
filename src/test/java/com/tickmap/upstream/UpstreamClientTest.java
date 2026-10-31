@@ -25,14 +25,14 @@ import org.springframework.web.client.RestClient;
 
 import tools.jackson.databind.json.JsonMapper;
 
-class TickApiClientTest {
+class UpstreamClientTest {
 
     private static final String BASE = "http://upstream.test/data";
     private static final String SIGHTINGS = BASE + "/tick-sightings";
     private static final String STATS = BASE + "/stats";
 
     private MockRestServiceServer server;
-    private TickApiClient client;
+    private UpstreamClient client;
     private final List<Duration> sleeps = new ArrayList<>();
 
     @BeforeEach
@@ -40,7 +40,7 @@ class TickApiClientTest {
         RestClient.Builder builder = RestClient.builder().baseUrl(BASE);
         server = MockRestServiceServer.bindTo(builder).build();
         var retryConfig = new UpstreamProperties.Retry(4, Duration.ofMillis(100), 2.0, Duration.ofSeconds(10));
-        client = new TickApiClient(builder.build(), new RetryExecutor(retryConfig, sleeps::add, () -> 1.0),
+        client = new UpstreamClient(builder.build(), new RetryExecutor(retryConfig, sleeps::add, () -> 1.0),
                 JsonMapper.builder().build());
     }
 
@@ -112,9 +112,9 @@ class TickApiClientTest {
         server.expect(times(4), requestTo(SIGHTINGS)).andRespond(withStatus(HttpStatus.SERVICE_UNAVAILABLE));
 
         assertThatThrownBy(client::fetchAllSightings)
-                .isInstanceOf(UpstreamApiException.class)
+                .isInstanceOf(UpstreamException.class)
                 .hasMessageContaining("failed after 4 attempt(s)")
-                .satisfies(e -> assertThat(((UpstreamApiException) e).getHttpStatus()).isEqualTo(503));
+                .satisfies(e -> assertThat(((UpstreamException) e).getHttpStatus()).isEqualTo(503));
         server.verify();
     }
 
@@ -124,7 +124,7 @@ class TickApiClientTest {
                 .andRespond(withStatus(HttpStatus.NOT_FOUND).body(json("{'error':'Not found'}")));
 
         assertThatThrownBy(client::fetchAllSightings)
-                .isInstanceOf(UpstreamApiException.class)
+                .isInstanceOf(UpstreamException.class)
                 .hasMessageContaining("HTTP 404")
                 .hasMessageContaining("Not found");
         assertThat(sleeps).isEmpty();
@@ -156,7 +156,7 @@ class TickApiClientTest {
                 .andRespond(withSuccess(json("{'error':'something odd'}"), MediaType.APPLICATION_JSON));
 
         assertThatThrownBy(client::fetchAllSightings)
-                .isInstanceOf(UpstreamApiException.class)
+                .isInstanceOf(UpstreamException.class)
                 .hasMessageContaining("Expected a JSON array");
         assertThat(sleeps).isEmpty();
     }
