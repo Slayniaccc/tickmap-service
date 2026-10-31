@@ -3,6 +3,7 @@ package com.tickmap.ingestion;
 /** Why an upstream record was not loaded as a new or updated sighting. */
 public enum RejectionReason {
     NOT_AN_OBJECT,
+    INVALID_FIELD_TYPE,
     MISSING_DATE,
     INVALID_DATE,
     DATE_IN_FUTURE,
